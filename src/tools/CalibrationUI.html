@@ -165,13 +165,83 @@
         let isDrawing = false;
         let startX, startY;
 
-        // 定義済みのラベルリスト (8人分 x 名前/キャラ)
-        const PREDEFINED_LABELS = [];
+        // 定義済みのラベルリスト (カテゴリ付き)
+        const PREDEFINED_GROUPS = [
+            {
+                label: "ロード画面 / Tab画面 (Player Info)",
+                options: []
+            },
+            {
+                label: "1. ゲーム全体情報 (Game State)",
+                options: [
+                    { value: "restricted_area_timer", text: "爆発タイマー残り時間" },
+                    { value: "day_count", text: "日付 (Day Count)" },
+                    { value: "day_night_indicator", text: "昼夜 (Day/Night)" },
+                    { value: "phase_timer", text: "今日の残り時間" },
+                    { value: "objective_info", text: "オブジェクト (Alpha/Omega)" },
+                    { value: "teams_remaining", text: "残りチーム数" },
+                    { value: "survivors_remaining", text: "残り人数" },
+                    { value: "team_kill_count", text: "チームキル数" },
+                    { value: "minimap", text: "ミニマップ" }
+                ]
+            },
+            {
+                label: "2. プレイヤー自身の情報 (Self)",
+                options: [
+                    { value: "player_icon", text: "アイコン" },
+                    { value: "player_level", text: "レベル" },
+                    { value: "player_hp_bar", text: "HPバー" },
+                    { value: "player_credits", text: "所持クレジット" },
+                    { value: "player_kill_count", text: "キル数" },
+                    { value: "player_assist_count", text: "アシスト数" },
+                    { value: "player_stats_panel", text: "ステータス詳細" }
+                ]
+            },
+            {
+                label: "3. スキル・アクション (Skills)",
+                options: [
+                    { value: "skill_q", text: "Qスキル" },
+                    { value: "skill_w", text: "Wスキル" },
+                    { value: "skill_e", text: "Eスキル" },
+                    { value: "skill_r", text: "Rスキル (Ult)" },
+                    { value: "skill_passive", text: "パッシブ" },
+                    { value: "skill_weapon", text: "武器スキル (D)" },
+                    { value: "skill_tactical", text: "戦術スキル (F)" },
+                    { value: "tactical_skill_gauge", text: "ガジェットエネルギー" }
+                ]
+            },
+            {
+                label: "4. 装備・インベントリ (Inventory)",
+                options: [
+                    { value: "equip_weapon", text: "装備_武器" },
+                    { value: "equip_chest", text: "装備_服" },
+                    { value: "equip_head", text: "装備_頭" },
+                    { value: "equip_arm", text: "装備_腕" },
+                    { value: "equip_leg", text: "装備_足" },
+                    { value: "inventory_slot_1", text: "持ち物 1" },
+                    { value: "inventory_slot_2", text: "持ち物 2" }
+                ]
+            },
+            {
+                label: "5. 味方情報 (Teammates)",
+                options: [
+                    { value: "ally_1_icon", text: "味方A アイコン" },
+                    { value: "ally_1_level", text: "味方A レベル" },
+                    { value: "ally_1_ult_status", text: "味方A Ult状況" },
+                    { value: "ally_1_hp_bar", text: "味方A HP" },
+                    { value: "ally_2_icon", text: "味方B アイコン" },
+                    { value: "ally_2_level", text: "味方B レベル" },
+                    { value: "ally_2_ult_status", text: "味方B Ult状況" },
+                    { value: "ally_2_hp_bar", text: "味方B HP" }
+                ]
+            }
+        ];
+
+        // プレイヤー名（動的生成）
         for (let i = 1; i <= 8; i++) {
-            PREDEFINED_LABELS.push({ value: `player${i}_name`, text: `Player ${i} Name (名前)` });
-            PREDEFINED_LABELS.push({ value: `player${i}_char`, text: `Player ${i} Char (キャラ)` });
+            PREDEFINED_GROUPS[0].options.push({ value: `player${i}_name`, text: `Player ${i} Name (名前)` });
+            PREDEFINED_GROUPS[0].options.push({ value: `player${i}_char`, text: `Player ${i} Char (キャラ)` });
         }
-        // 必要に応じて24人分まで拡張可能
 
         imageLoader.addEventListener('change', handleImage, false);
 
@@ -223,9 +293,8 @@
 
             if (w < 5 || h < 5) return;
 
-            // 次の未設定ラベルを自動選択するロジック
-            const usedLabels = regions.map(r => r.label);
-            const nextLabel = PREDEFINED_LABELS.find(l => !usedLabels.includes(l.value))?.value || `custom_region_${regions.length + 1}`;
+            // 次のラベルを推測 (簡易実装: カスタム番号)
+            const nextLabel = `custom_region_${regions.length + 1}`;
 
             const newRegion = {
                 id: Date.now(),
@@ -270,10 +339,16 @@
                 const item = document.createElement('div');
                 item.className = 'region-item';
 
-                // プルダウンメニューの生成 (入力補助用)
+                // プルダウンメニューの生成 (入力補助用) with OptGroup
                 let optionsHtml = '<option value="" disabled selected>▼ プリセットから選ぶ</option>';
-                PREDEFINED_LABELS.forEach(l => {
-                    optionsHtml += `<option value="${l.value}">${l.text}</option>`;
+
+                PREDEFINED_GROUPS.forEach(group => {
+                    optionsHtml += `<optgroup label="${group.label}">`;
+                    group.options.forEach(opt => {
+                        const selected = r.label === opt.value ? 'selected' : ''; // ここでは選択状態は反映されないが(input優先)、再描画時のため
+                        optionsHtml += `<option value="${opt.value}">${opt.text}</option>`;
+                    });
+                    optionsHtml += `</optgroup>`;
                 });
 
                 item.innerHTML = `
