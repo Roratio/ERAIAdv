@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ERAIAdv Vision Calibration Tool</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; }
+        .container { display: flex; gap: 20px; }
+        .canvas-container { position: relative; border: 1px solid #ccc; }
+        canvas { cursor: crosshair; }
+        .controls { min-width: 300px; display: flex; flex-direction: column; gap: 10px; }
+        .region-list { border: 1px solid #eee; padding: 10px; max-height: 400px; overflow-y: auto; }
+        .region-item { background: #f9f9f9; padding: 5px; margin-bottom: 5px; border-left: 4px solid #007bff; display: flex; flex-direction: column; gap: 5px;}
+        .region-item input { padding: 4px; }
+        .btn { padding: 10px; cursor: pointer; background: #007bff; color: white; border: none; border-radius: 4px; }
+        .btn:hover { background: #0056b3; }
+        .btn.delete { background: #dc3545; font-size: 0.8em; align-self: flex-end;}
+        textarea { width: 100%; height: 150px; margin-top: 10px; font-family: monospace; }
+        h2 { margin-top: 0; }
+    </style>
+</head>
+<body>
+    <h1>ERAIAdv Vision Calibration Tool</h1>
+    <p>1. Upload a 1920x1080 screenshot of the Loading Screen (or Tab Screen).<br>
+       2. Draw boxes around the user names.<br>
+       3. Label them (e.g., "player1_name", "player1_char").<br>
+       4. Copy the generated JSON to <code>config/vision_map.json</code>.</p>
+    
+    <input type="file" id="imageLoader" accept="image/*">
+    <br><br>
+
+    <div class="container">
+        <div class="canvas-container">
+            <canvas id="imageCanvas"></canvas>
+        </div>
+        
+        <div class="controls">
+            <h2>Regions</h2>
+            <div id="regionList" class="region-list">
+                <p style="color: #888;">No regions drawn yet.</p>
+            </div>
+            <button class="btn" onclick="generateJSON()">Generate JSON</button>
+            <textarea id="jsonOutput" readonly placeholder="JSON will appear here..."></textarea>
+        </div>
+    </div>
+
+    <script>
+        const imageLoader = document.getElementById('imageLoader');
+        const canvas = document.getElementById('imageCanvas');
+        const ctx = canvas.getContext('2d');
+        const regionListDiv = document.getElementById('regionList');
+        const jsonOutput = document.getElementById('jsonOutput');
+
+        let img = new Image();
+        let regions = [];
+        let isDrawing = false;
+        let startX, startY;
+        let scale = 1;
+
+        imageLoader.addEventListener('change', handleImage, false);
+
+        function handleImage(e) {
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                img.onload = function() {
+                    canvas.width = img.width;
+                    canvas.height = img.height;
+                    draw();
+                }
+                img.src = event.target.result;
+            }
+            reader.readAsDataURL(e.target.files[0]);
+        }
+
+        canvas.addEventListener('mousedown', (e) => {
+            if (!img.src) return;
+            const rect = canvas.getBoundingClientRect();
+            startX = (e.clientX - rect.left);
+            startY = (e.clientY - rect.top);
+            isDrawing = true;
+        });
+
+        canvas.addEventListener('mousemove', (e) => {
+            if (!isDrawing) return;
+            const rect = canvas.getBoundingClientRect();
+            const currentX = (e.clientX - rect.left);
+            const currentY = (e.clientY - rect.top);
+            
+            draw();
+            ctx.strokeStyle = 'red';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(startX, startY, currentX - startX, currentY - startY);
+        });
+
+        canvas.addEventListener('mouseup', (e) => {
+            if (!isDrawing) return;
+            isDrawing = false;
+            
+            const rect = canvas.getBoundingClientRect();
+            const endX = (e.clientX - rect.left);
+            const endY = (e.clientY - rect.top);
+            
+            // Normalize coordinates (handle negative width/height)
+            const x = Math.min(startX, endX);
+            const y = Math.min(startY, endY);
+            const w = Math.abs(endX - startX);
+            const h = Math.abs(endY - startY);
+
+            if (w < 5 || h < 5) return; // Ignore tiny clicks
+
+            const newRegion = {
+                id: Date.now(),
+                label: `region_${regions.length + 1}`,
+                rect: { x: Math.round(x), y: Math.round(y), w: Math.round(w), h: Math.round(h) }
+            };
+            
+            regions.push(newRegion);
+            updateList();
+            draw();
+        });
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(img, 0, 0);
+            
+            regions.forEach(r => {
+                ctx.strokeStyle = '#007bff'; // Blue for saved
+                ctx.lineWidth = 2;
+                ctx.strokeRect(r.rect.x, r.rect.y, r.rect.w, r.rect.h);
+                
+                ctx.fillStyle = 'rgba(0, 123, 255, 0.3)';
+                ctx.fillRect(r.rect.x, r.rect.y, r.rect.w, r.rect.h);
+                
+                ctx.fillStyle = 'white';
+                ctx.font = '14px Arial';
+                ctx.fillText(r.label, r.rect.x, r.rect.y - 5);
+            });
+        }
+
+        function updateList() {
+            regionListDiv.innerHTML = '';
+            regions.forEach((r, index) => {
+                const item = document.createElement('div');
+                item.className = 'region-item';
+                item.innerHTML = `
+                    <input type="text" value="${r.label}" onchange="updateLabel(${r.id}, this.value)">
+                    <small>x:${r.rect.x}, y:${r.rect.y}, w:${r.rect.w}, h:${r.rect.h}</small>
+                    <button class="btn delete" onclick="deleteRegion(${r.id})">Delete</button>
+                `;
+                regionListDiv.appendChild(item);
+            });
+        }
+
+        window.updateLabel = function(id, newLabel) {
+            const r = regions.find(r => r.id === id);
+            if (r) {
+                r.label = newLabel;
+                draw();
+            }
+        };
+
+        window.deleteRegion = function(id) {
+            regions = regions.filter(r => r.id !== id);
+            updateList();
+            draw();
+        };
+
+        window.generateJSON = function() {
+            const output = {};
+            regions.forEach(r => {
+                output[r.label] = r.rect;
+            });
+            jsonOutput.value = JSON.stringify(output, null, 4);
+        };
+    </script>
+</body>
+</html>
