@@ -270,21 +270,19 @@
                 const item = document.createElement('div');
                 item.className = 'region-item';
 
-                // プルダウンメニューの生成
-                let optionsHtml = '';
+                // プルダウンメニューの生成 (入力補助用)
+                let optionsHtml = '<option value="" disabled selected>▼ プリセットから選ぶ</option>';
                 PREDEFINED_LABELS.forEach(l => {
-                    const selected = r.label === l.value ? 'selected' : '';
-                    optionsHtml += `<option value="${l.value}" ${selected}>${l.text}</option>`;
+                    optionsHtml += `<option value="${l.value}">${l.text}</option>`;
                 });
-                // カスタム値が選ばれている場合
-                if (!PREDEFINED_LABELS.find(l => l.value === r.label)) {
-                    optionsHtml += `<option value="${r.label}" selected>${r.label} (Custom)</option>`;
-                }
 
                 item.innerHTML = `
-                    <select onchange="updateLabel(${r.id}, this.value)">
-                        ${optionsHtml}
-                    </select>
+                    <div style="display: flex; gap: 5px; align-items: center;">
+                        <input type="text" value="${r.label}" onchange="updateLabel(${r.id}, this.value)" style="flex-grow: 1; padding: 5px;" placeholder="ラベル名を入力...">
+                        <select onchange="this.previousElementSibling.value=this.value; updateLabel(${r.id}, this.value)" style="width: 30px;" title="プリセットから入力">
+                            ${optionsHtml}
+                        </select>
+                    </div>
                     <small>x:${r.rect.x}, y:${r.rect.y}, w:${r.rect.w}, h:${r.rect.h}</small>
                     <button class="btn delete" onclick="deleteRegion(${r.id})">削除 (Delete)</button>
                 `;
