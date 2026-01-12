@@ -8,30 +8,30 @@ import os
 from PIL import Image
 
 class VisionProcessor:
-    def __init__(self, config_path="config/vision_map.json"):
-        # Adjust path relative to project root if needed
-        self.config_path = config_path
-        self.regions = {}
+    def __init__(self, config_dir="config"):
+        self.config_dir = config_dir
         self.sct = mss.mss()
-        self.load_config()
+        self.regions_map = {} # scene_name -> regions_dict
+        
+        # Load default if exists
+        self.load_config("vision_map.json", "default")
+        self.load_config("vision_map_char_select.json", "char_select")
+        self.load_config("vision_map_loading.json", "loading")
 
-        # NOTE: User might need to set Tesseract path if it's not in PATH
-        # pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
-
-    def load_config(self):
-        """Loads region definitions from JSON."""
-        if os.path.exists(self.config_path):
+    def load_config(self, filename, scene_name):
+        """Loads a region config file and assigns it to a scene name."""
+        path = os.path.join(self.config_dir, filename)
+        if os.path.exists(path):
             try:
-                with open(self.config_path, 'r', encoding='utf-8') as f:
-                    self.regions = json.load(f)
-                print(f"[VisionProcessor] Loaded config: {len(self.regions)} regions defined.")
+                with open(path, 'r', encoding='utf-8') as f:
+                    self.regions_map[scene_name] = json.load(f)
+                print(f"[VisionProcessor] Loaded config '{filename}' for scene '{scene_name}' ({len(self.regions_map[scene_name])} regions).")
             except Exception as e:
-                print(f"[VisionProcessor] Error loading config: {e}")
-                self.regions = {}
+                print(f"[VisionProcessor] Error loading {filename}: {e}")
         else:
-            print(f"[VisionProcessor] Warning: Config file not found at {self.config_path}.")
-            print("Please run the Calibration Tool to generate vision_map.json.")
-            self.regions = {}
+            # Silent fail for optional configs, prompt only for default if missing
+            if scene_name == "default":
+                print(f"[VisionProcessor] Default config not found at {path}.")
 
     def capture_screen(self):
         """Captures the primary monitor."""
@@ -44,15 +44,21 @@ class VisionProcessor:
         img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
         return img
 
-    def scan_frame(self):
-        """Captures screen and returns text for all defined regions."""
-        if not self.regions:
-            return {"error": "No regions configured"}
+    def scan_frame(self, scene_name="default"):
+        """Captures screen and returns text for regions defined in the specified scene."""
+        regions = self.regions_map.get(scene_name)
+        
+        # Fallback to default if scene specific not found, or error
+        if not regions:
+            regions = self.regions_map.get("default")
+        
+        if not regions:
+            return {"error": f"No regions configured for scene '{scene_name}' and no default found."}
 
         img = self.capture_screen()
         results = {}
 
-        for label, rect in self.regions.items():
+        for label, rect in regions.items():
             # rect format: {x, y, w, h}
             x, y, w, h = rect.get('x'), rect.get('y'), rect.get('w'), rect.get('h')
 
@@ -84,9 +90,9 @@ class VisionProcessor:
 
             # Run OCR
             # psm 7: Treat the image as a single text line.
-            # lang='jpn+eng': Support Japanese and English
+            # lang='eng+jpn+kor+chi_sim+chi_tra': Support Multi-language
             try:
-                text = pytesseract.image_to_string(thresh, lang='eng+jpn', config='--psm 7').strip()
+                text = pytesseract.image_to_string(thresh, lang='eng+jpn+kor+chi_sim+chi_tra', config='--psm 7').strip()
             except pytesseract.TesseractNotFoundError:
                 print("[Error] Tesseract executable not found. Please install Tesseract and add to PATH.")
                 return {"error": "Tesseract not found"}
@@ -120,20 +126,21 @@ if __name__ == "__main__":
     # Simple test
     # Ensure config/vision_map.json exists or pass a dummy path
     root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    config_path = os.path.join(root_dir, "config", "vision_map.json")
+    config_dir = os.path.join(root_dir, "config")
     
-    processor = VisionProcessor(config_path)
+    processor = VisionProcessor(config_dir)
     
-    if not processor.regions:
+    # Check if any regions loaded
+    if not processor.regions_map:
         print("Config not loaded. Creating dummy regions for test...")
         # Dictionary format matching the JSON
-        processor.regions = {
+        processor.regions_map["default"] = {
             "test_region": {"x": 100, "y": 100, "w": 200, "h": 50}
         }
     
     print("Running OCR scan (Press Ctrl+C to stop)...")
     # Make sure to handle Tesseract error gracefully in loop
-    res = processor.scan_frame()
+    res = processor.scan_frame("default")
     print("Result:", res)
     
     # processor.debug_show_regions()
