@@ -8,6 +8,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
 from components.LogWatcher import LogWatcher
 from components.VisionProcessor import VisionProcessor
 from components.EternalReturnAPI import EternalReturnAPI
+from components.LocalLLMHandler import LocalLLMHandler
 
 class MainAgent:
     def __init__(self):
@@ -15,8 +16,9 @@ class MainAgent:
         
         # 1. Initialize Components
         self.log_watcher = LogWatcher()
-        self.vision = VisionProcessor(config_path="config/vision_map.json")
+        self.vision = VisionProcessor(config_dir="config")
         self.api = EternalReturnAPI() # Keys loaded from .env
+        self.llm = LocalLLMHandler()
         
         # State
         self.current_mode = "Unknown"
@@ -106,8 +108,25 @@ class MainAgent:
             else:
                 print("   -> User Not Found (OCR Error?)")
 
-        print("--- Scan Complete ---\n")
-        # Here we would send `self.participants` to the LLM to generate commentary.
+        print("--- Scan Complete ---")
+        
+        # 4. Agent Commentary
+        if self.participants:
+            print("Thinking (Consulting LLM)...")
+            # Build a simple text summary for the LLM
+            context = f"現在のモード: {self.current_mode}\n検出されたプレイヤー:\n"
+            for name, stats in self.participants.items():
+                if stats:
+                    context += f"- 名前: {name}, 勝率: {stats.get('win_rate')}%, 平均キル: {stats.get('avg_kills')}\n"
+                else:
+                    context += f"- 名前: {name}, データなし\n"
+            
+            context += "\nこの状況でのアドバイスをください。"
+            
+            advice = self.llm.generate_commentary(context)
+            print(f"\n[AI Advice]: {advice}\n")
+        else:
+            print("No participants data found to analyze.")
 
 if __name__ == "__main__":
     agent = MainAgent()
